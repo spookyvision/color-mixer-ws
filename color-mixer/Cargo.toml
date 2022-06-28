@@ -1,0 +1,21 @@
+[package]
+name = "color-mixer"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = []
+wasm = ["chrono/wasmbind"]
+
+[dependencies]
+bytemuck = {version="1.9.1", features=["derive"]}
+palette = {version="0.6.0", features=["serializing"]}
+simple-easing = "1.0.0"
+log = "0.4.6"
+chrono = { version = "0.4.19", optional=true }
+derive_more = "0.99.17"
+indexmap = "1.9.1"
+serde_json = "1.0.81"
+serde = { version = "1.0.137", features = ["derive"] }
