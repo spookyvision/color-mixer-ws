@@ -4,15 +4,18 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use derive_more::AsRef;
+use indexmap::IndexMap;
 use palette::{IntoColor, Luv, Mix, Srgb};
 
 pub type Srgb8 = palette::rgb::Rgb<palette::encoding::Srgb, u8>;
 
 use derive_more::{Deref, DerefMut, From, Into};
 
+const PRIMES: &[u32] = &[
+    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+];
 #[derive(Clone, PartialEq, From, Into, Deref, DerefMut, Debug, Serialize, Deserialize)]
-pub struct Wrap(Srgb8);
+pub struct Wrap(pub Srgb8);
 
 impl Default for Segment {
     fn default() -> Self {
@@ -21,7 +24,8 @@ impl Default for Segment {
             false,
             Srgb8::new(255, 150, 0),
             Srgb8::new(255, 10, 220),
-            2000,
+            0,
+            40,
         )
     }
 }
@@ -34,22 +38,45 @@ impl Hash for Wrap {
     }
 }
 
-#[derive(PartialEq, Clone, Hash, Debug, AsRef, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Hash, Debug, Serialize, Deserialize)]
 pub struct Segment {
+    uuid: Uuid,
     length: usize,
     bgr: bool,
     colors: [Wrap; 2],
-    chill_ms: u32,
+    chill_idx: usize,
+    chill_fac: u32,
 }
 
 impl Segment {
-    pub fn new(length: usize, bgr: bool, c1: Srgb8, c2: Srgb8, chill_ms: u32) -> Self {
+    pub fn new_with_uuid(
+        uuid: Uuid,
+        length: usize,
+        bgr: bool,
+        c1: Srgb8,
+        c2: Srgb8,
+        chill_idx: usize,
+        chill_fac: u32,
+    ) -> Self {
         Self {
+            uuid,
             length,
             bgr,
             colors: [Wrap(c1), Wrap(c2)],
-            chill_ms,
+            chill_idx,
+            chill_fac,
         }
+    }
+
+    pub fn new(
+        length: usize,
+        bgr: bool,
+        c1: Srgb8,
+        c2: Srgb8,
+        chill_idx: usize,
+        chill_fac: u32,
+    ) -> Self {
+        Self::new_with_uuid(Uuid::new_v4(), length, bgr, c1, c2, chill_idx, chill_fac)
     }
 
     pub fn mix(&self, mut t: f32) -> Srgb8 {
@@ -66,15 +93,15 @@ impl Segment {
         let res: Srgb = res.into_color();
         res.into_format()
     }
-    pub fn color_at(&self, at_millis: u32) -> Srgb8 {
-        let wrapped = (at_millis % self.chill_ms) as f32;
-        let chill = self.chill_ms as f32;
-        let t = wrapped / chill;
-        self.mix(t)
-    }
 
     pub fn chill_ms(&self) -> u32 {
-        self.chill_ms
+        self.chill_fac * PRIMES[self.chill_idx]
+    }
+    pub fn color_at(&self, at_millis: u32) -> Srgb8 {
+        let wrapped = (at_millis % self.chill_ms()) as f32;
+        let chill = self.chill_ms() as f32;
+        let t = wrapped / chill;
+        self.mix(t)
     }
 
     pub fn color_1(&self) -> &Srgb8 {
@@ -83,6 +110,38 @@ impl Segment {
 
     pub fn color_2(&self) -> &Srgb8 {
         &self.colors[1]
+    }
+
+    pub fn length(&self) -> usize {
+        self.length
+    }
+
+    pub fn uuid(&self) -> Uuid {
+        self.uuid
+    }
+
+    pub fn to_uuid_string(&self) -> String {
+        self.uuid.to_string()
+    }
+
+    pub fn chill_idx(&self) -> usize {
+        self.chill_idx
+    }
+
+    pub fn set_chill_idx(&mut self, chill_idx: usize) {
+        self.chill_idx = chill_idx;
+    }
+
+    pub fn chill_fac(&self) -> u32 {
+        self.chill_fac
+    }
+
+    pub fn set_chill_fac(&mut self, chill_fac: u32) {
+        self.chill_fac = chill_fac;
+    }
+
+    pub fn colors_mut(&mut self) -> &mut [Wrap; 2] {
+        &mut self.colors
     }
 }
 
@@ -140,26 +199,48 @@ mod imp {
 pub use imp::Control;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-#[derive(PartialEq, Hash, Clone, Debug, Serialize, Deserialize)]
+#[cfg(feature = "wasm")]
+type MAP = IndexMap<String, Segment>;
+
+#[cfg(feature = "esp")]
+type MAP = IndexMap<String, Segment>;
+// type MAP = IndexMap<String, Segment, std::hash::BuildHasherDefault<hashers::fx_hash::FxHasher>>;
+
+#[derive(PartialEq, Clone, Debug, Serialize, Deserialize)]
 pub struct State {
-    segments: Vec<Segment>,
+    segments: MAP,
 }
 
 impl State {
     pub fn new(segments: impl Iterator<Item = Segment>) -> Self {
         Self {
-            segments: segments.collect(),
+            segments: segments.map(|seg| (seg.uuid().to_string(), seg)).collect(),
         }
     }
 
     pub fn new_empty() -> Self {
-        Self { segments: vec![] }
+        Self {
+            segments: MAP::new(),
+        }
+    }
+
+    pub fn insert(&mut self, seg: Segment) -> Option<Segment> {
+        self.segments.insert(seg.uuid().to_string(), seg)
+    }
+
+    pub fn remove(&mut self, segment_id: impl AsRef<str>) -> Option<Segment> {
+        self.segments.remove(segment_id.as_ref())
+    }
+
+    pub fn segments(&self) -> &MAP {
+        &self.segments
     }
 }
 
 impl Deref for State {
-    type Target = Vec<Segment>;
+    type Target = MAP;
 
     fn deref(&self) -> &Self::Target {
         &self.segments

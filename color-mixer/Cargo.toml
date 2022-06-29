@@ -7,15 +7,18 @@ resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
 default = []
-wasm = ["chrono/wasmbind"]
+esp = ["uuid", "hashers"]
+wasm = ["chrono/wasmbind", "uuid/js"]
 
 [dependencies]
 bytemuck = {version="1.9.1", features=["derive"]}
-palette = {version="0.6.0", features=["serializing"]}
+# palette = {version="0.6.0", features=["serializing"]}
+palette = {git="https://github.com/Ogeon/palette.git", features=["serializing"]}
+uuid = { version = "1.1", features=["serde", "v4"], optional = true}
+hashers = { version = "1", optional = true}
 simple-easing = "1.0.0"
 log = "0.4.6"
 chrono = { version = "0.4.19", optional=true }
 derive_more = "0.99.17"
-indexmap = "1.9.1"
-serde_json = "1.0.81"
+indexmap = {version="1.9.1", features=["serde"]}
 serde = { version = "1.0.137", features = ["derive"] }

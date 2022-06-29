@@ -1,20 +1,19 @@
-use std::rc::Rc;
+use std::{rc::Rc, sync::Mutex};
 
-use color_mixer::strip::{Control, Segment, Srgb8, State};
+use color_mixer::strip::{Control, Segment, Srgb8, State, Wrap};
 use dioxus::{core::to_owned, prelude::*};
+use fermi::{use_atom_state, use_init_atom_root, use_read, use_set, Atom};
 use gloo::timers::future::TimeoutFuture;
-use palette::Srgb;
+use indexmap::IndexMap;
+use palette::{stimulus::IntoStimulus, Srgb};
+
+pub static STATE_ATOM: Atom<Option<State>> = |_| None;
 
 fn main() {
     wasm_logger::init(wasm_logger::Config::default());
     console_error_panic_hook::set_once();
-
-    dioxus::web::launch(app);
+    dioxus::web::launch(AppOuter);
 }
-
-const PRIMES: &[u32] = &[
-    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
-];
 
 #[allow(non_snake_case)]
 #[inline_props]
@@ -26,7 +25,7 @@ fn Color2(
     c1: UseState<Srgb8>,
     c2: UseState<Srgb8>,
 ) -> Element {
-    let seg = Segment::new(100, false, **c1, **c2, PRIMES[*prime_idx] * fac);
+    let seg = Segment::new(100, false, **c1, **c2, *prime_idx, *fac);
     let col = seg.color_at(*now);
 
     let dur = seg.chill_ms();
@@ -38,9 +37,14 @@ fn Color2(
     }))
 }
 
+#[derive(Debug, Clone)]
+struct DState(Rc<Mutex<IndexMap<String, Segment>>>);
+
 #[allow(non_snake_case)]
 #[inline_props]
-fn ColorInput(cx: Scope, val: UseState<Srgb8>) -> Element {
+fn ColorInput(cx: Scope, segment_id: String, color_idx: usize, val: UseState<Srgb8>) -> Element {
+    let segments = cx.use_hook(|_| cx.consume_context::<DState>());
+
     cx.render(rsx! {
         input {
             r#type: "color",
@@ -48,7 +52,13 @@ fn ColorInput(cx: Scope, val: UseState<Srgb8>) -> Element {
             oninput: move |ev| {
                 let color: Srgb8 = ev.value.parse().unwrap();
                 val.set(color);
-
+                log::debug!("{segments:?}");
+                if let Some(segments) = segments {
+                    let mut segments = segments.0.lock().unwrap();
+                    if let Some(segment) = segments.get_mut(segment_id) {
+                        segment.colors_mut()[*color_idx] = Wrap(color);
+                    }
+                }
             },
         }
     })
@@ -61,8 +71,8 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
     let c2 = use_state(&cx, || seg.color_2().to_owned());
 
     cx.render(rsx!(
-        ColorInput{val: c1.clone()}
-        ColorInput{val: c2.clone()}
+        ColorInput{segment_id: seg.to_uuid_string(), color_idx: 0, val: c1.clone()}
+        ColorInput{segment_id: seg.to_uuid_string(), color_idx: 1, val: c2.clone()}
         Color2{prime_idx: *prime_idx, fac: *fac, now: *now, c1: c1.clone(), c2: c2.clone()}
     ))
 }
@@ -71,20 +81,23 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
 #[inline_props]
 fn Segments(cx: Scope, state: State, fac: UseState<String>, now: u32) -> Element {
     let fac: u32 = fac.get().parse().unwrap();
+    cx.use_hook(|_| {
+        cx.provide_context(DState(Rc::new(Mutex::new(state.segments().clone()))));
+    });
 
-    let content = state.iter().enumerate().map(|(id, seg)| {
+    let content = state.iter().map(|(segment_id, seg)| {
         rsx! {
             div {
-                key: "seg-{id}",
-                SegmentN{seg:seg.clone(), prime_idx: id+10, fac: fac, now: *now}}
+                key: "seg-{segment_id}",
+                SegmentN{seg:seg.clone(), prime_idx: seg.chill_idx(), fac: fac, now: *now}}
         }
     });
 
-    cx.render(rsx!(content))
+    cx.render(rsx!(div { content }))
 }
 
-fn app(cx: Scope) -> Element {
-    let control = use_ref(&cx, || Control::new());
+fn AppOuter(cx: Scope) -> Element {
+    let set_state = Rc::clone(use_set(&cx, STATE_ATOM));
 
     let state = State::new(
         [
@@ -93,6 +106,7 @@ fn app(cx: Scope) -> Element {
                 false,
                 Srgb8::new(255, 150, 0),
                 Srgb8::new(255, 10, 120),
+                0,
                 100,
             ),
             Segment::new(
@@ -100,6 +114,7 @@ fn app(cx: Scope) -> Element {
                 false,
                 Srgb8::new(166, 0, 255),
                 Srgb8::new(2, 192, 192),
+                1,
                 100,
             ),
             Segment::new(
@@ -107,6 +122,7 @@ fn app(cx: Scope) -> Element {
                 false,
                 Srgb8::new(20, 200, 141),
                 Srgb8::new(200, 176, 20),
+                2,
                 100,
             ),
             Segment::new(
@@ -114,11 +130,20 @@ fn app(cx: Scope) -> Element {
                 false,
                 Srgb8::new(200, 20, 30),
                 Srgb8::new(200, 200, 10),
+                3,
                 100,
             ),
         ]
         .into_iter(),
     );
+
+    set_state(Some(state));
+    cx.render(rsx!(App {}))
+}
+
+fn App(cx: Scope) -> Element {
+    let state: &Option<State> = use_read(&cx, STATE_ATOM);
+    let control = use_ref(&cx, || Control::new());
 
     let now = control.write().tick();
     let now = use_state(&cx, || now);
@@ -130,33 +155,51 @@ fn app(cx: Scope) -> Element {
     to_owned![now, control];
     let now_too = now.clone();
 
-    let _irish_setter = use_future(&cx, &control, |c| async move {
-        let dat_now = c.with_mut(|c| c.tick());
-        now_too.set(dat_now);
-    });
+    // let _english_setter: &UseFuture<Result<_, Box<dyn std::error::Error>>> =
+    //     use_future(&cx, &control, |c| async move {
+    //         let dat_now = c.with_mut(|c| c.tick());
+    //         now_too.set(dat_now);
+    //         Ok(())
+    //     });
 
-    cx.render(rsx! (
-         div {
-             style: "text-align: center;",
-             h1 { "Bisexual lighting controller" }
-             h3 { "(bisexuality optional)" }
-             p { "time: {now}"}
-             form {
-                 input {
-                     r#type: "range",
-                     name: "chill_val",
-                     value: "{chill_val}",
-                     id: "chill_val",
-                     min: "10",
-                     max: "800",
-                     oninput: move |ev| chill_val.set(ev.value.clone()),
+    let now_three = now.clone();
+    let _irish_setter: &UseFuture<Result<_, Box<dyn std::error::Error>>> =
+        use_future(&cx, (), |_| async move {
+            let mut res = surf::get("/now").await?;
+            let text = res.body_string().await?;
+
+            let now: u32 = text.parse()?;
+            now_three.set(now);
+            TimeoutFuture::new(1_000).await;
+            Ok(())
+        });
+
+    let content = match state {
+        None => rsx!(p { "loading..." }),
+        Some(state) => rsx! (
+             div {
+                 style: "text-align: center;",
+                 h1 { "Bisexual lighting controller" }
+                 h3 { "(bisexuality optional)" }
+                 p { "time: {now}"}
+                 form {
+                     input {
+                         r#type: "range",
+                         name: "chill_val",
+                         value: "{chill_val}",
+                         id: "chill_val",
+                         min: "10",
+                         max: "800",
+                         oninput: move |ev| chill_val.set(ev.value.clone()),
+                     }
                  }
+                 p { "chill: {chill_val}"}
+
+                 Segments {state: state.clone(), fac: chill_val.clone(), now: *now}
+
+
              }
-             p { "chill: {chill_val}"}
-
-             Segments {state: state.clone(), fac: chill_val.clone(), now: *now}
-
-
-         }
-    ))
+        ),
+    };
+    cx.render(content)
 }

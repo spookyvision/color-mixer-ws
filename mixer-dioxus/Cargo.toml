@@ -12,16 +12,19 @@ wasm = ["chrono/wasmbind"]
 
 [dependencies]
 bytemuck = {version="1.9.1", features=["derive"]}
-palette = {version="0.6.0", features=["serializing"]}
+# palette = {version="0.6.0", features=["serializing"]}
+palette = {git="https://github.com/Ogeon/palette.git", features=["serializing"]}
 simple-easing = "1.0.0"
 dioxus = { version = "0.2.4", features = ["web", "hooks"] }
+fermi = "*"
 log = "0.4.6"
 wasm-logger = "0.2.0"
 console_error_panic_hook = "0.1.7"
 chrono = { version = "0.4.19", optional=true }
 gloo =  { version = "0.8", features = ["futures"] }
 derive_more = "0.99.17"
-indexmap = "1.9.1"
+indexmap = {version="1.9.1", features=["serde"]}
 serde_json = "1.0.81"
 serde = { version = "1.0.137", features = ["derive"] }
 color-mixer = { path = "../color-mixer", features = ["wasm"] }
+surf = {version="2.3", default_features=false, features=["wasm-client"]}
