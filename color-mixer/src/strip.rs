@@ -160,6 +160,14 @@ mod imp {
 
         pub fn tick(&mut self) -> u32 {
             self.now = Utc::now();
+            self.ms_since_start()
+        }
+
+        pub fn set_now(&mut self, now: DateTime<Utc>) {
+            self.now = now;
+        }
+
+        pub fn ms_since_start(&self) -> u32 {
             let dt = self
                 .now
                 .signed_duration_since(self.start)
@@ -167,10 +175,6 @@ mod imp {
                 .unwrap()
                 .as_millis();
             dt as u32 // :&
-        }
-
-        pub fn set_now(&mut self, now: DateTime<Utc>) {
-            self.now = now;
         }
     }
 }

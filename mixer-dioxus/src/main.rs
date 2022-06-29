@@ -1,4 +1,7 @@
-use std::{rc::Rc, sync::Mutex};
+use std::{
+    rc::Rc,
+    sync::{mpsc, Mutex},
+};
 
 use color_mixer::strip::{Control, Segment, Srgb8, State, Wrap};
 use dioxus::{core::to_owned, prelude::*};
@@ -8,6 +11,8 @@ use indexmap::IndexMap;
 use palette::{stimulus::IntoStimulus, Srgb};
 
 pub static STATE_ATOM: Atom<Option<State>> = |_| None;
+
+const BASE_URL: Option<&'static str> = Some("http://127.0.0.1:8081/");
 
 fn main() {
     wasm_logger::init(wasm_logger::Config::default());
@@ -148,31 +153,44 @@ fn App(cx: Scope) -> Element {
     let now = control.write().tick();
     let now = use_state(&cx, || now);
 
+    let delta = use_state(&cx, || 0i32);
+
     let initial_val = "400".to_string();
 
     let chill_val = use_state(&cx, || initial_val.clone());
 
-    to_owned![now, control];
+    to_owned![delta, control];
+    let control_too = control.clone();
+    let delta_too = delta.clone();
     let now_too = now.clone();
-
-    // let _english_setter: &UseFuture<Result<_, Box<dyn std::error::Error>>> =
-    //     use_future(&cx, &control, |c| async move {
-    //         let dat_now = c.with_mut(|c| c.tick());
-    //         now_too.set(dat_now);
-    //         Ok(())
-    //     });
-
-    let now_three = now.clone();
-    let _irish_setter: &UseFuture<Result<_, Box<dyn std::error::Error>>> =
-        use_future(&cx, (), |_| async move {
-            let mut res = surf::get("/now").await?;
-            let text = res.body_string().await?;
-
-            let now: u32 = text.parse()?;
-            now_three.set(now);
-            TimeoutFuture::new(1_000).await;
+    let mut old_delta = 0;
+    let _english_setter: &UseFuture<Result<_, Box<dyn std::error::Error>>> =
+        use_future(&cx, &control, |c| async move {
+            let dat_now = c.with_mut(|c| c.tick());
+            let mut new_delta = *delta;
+            now_too.set(dat_now + (*delta as u32));
             Ok(())
         });
+
+    let local_now = now.clone();
+    let _irish_setter: &UseFuture<Result<_, Box<dyn std::error::Error>>>;
+    if let Some(base_url) = BASE_URL {
+        _irish_setter = use_future(&cx, (), |_| async move {
+            loop {
+                let url = format!("{base_url}now");
+                let mut res = surf::get(url).await?;
+                let text = res.body_string().await?;
+                let server_now: i32 = text.parse()?;
+                let ms_since_start = control_too.with(|c| c.ms_since_start());
+                let delta_value = server_now as i32 - ms_since_start as i32;
+
+                delta_too.with_mut(|set| *set = delta_value);
+
+                TimeoutFuture::new(1_000).await;
+            }
+            Ok(())
+        });
+    }
 
     let content = match state {
         None => rsx!(p { "loading..." }),
@@ -195,7 +213,7 @@ fn App(cx: Scope) -> Element {
                  }
                  p { "chill: {chill_val}"}
 
-                 Segments {state: state.clone(), fac: chill_val.clone(), now: *now}
+                 Segments {state: state.clone(), fac: chill_val.clone(), now: **now}
 
 
              }

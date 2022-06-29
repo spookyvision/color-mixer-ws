@@ -1,0 +1,60 @@
+from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
+from sys import argv
+import time
+import os
+
+hostName = "localhost"
+serverPort = 8081
+
+start = time.time()
+
+
+class MyServer(SimpleHTTPRequestHandler):
+    # protocol_version = "HTTP/1.1"
+
+    def __init__(self, *args, **kwargs):
+        self.directory = os.fspath(directory)
+        super().__init__(*args, **kwargs)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods',
+                         'GET, PUT, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'content-type')
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path == '/now':
+            dt = int((time.time() - start)*1000)
+            self.send_response(200)
+
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET')
+            self.send_header('Access-Control-Allow-Headers', 'content-type')
+
+            self.end_headers()
+            self.wfile.write(f'{dt}'.encode('ascii'))
+
+        elif self.path == '/data':
+            data = """{"2e2765f4-7fb7-4a8a-b61f-6dc874db15e9":{"uuid":"2e2765f4-7fb7-4a8a-b61f-6dc874db15e9","length":1,"bgr":false,"colors":[{"red":255,"green":150,"blue":0},{"red":255,"green":10,"blue":120}],"chill_idx":0,"chill_fac":100},"ae98126f-915e-470d-93a0-4b40a853a0c8":{"uuid":"ae98126f-915e-470d-93a0-4b40a853a0c8","length":1,"bgr":false,"colors":[{"red":166,"green":0,"blue":255},{"red":2,"green":192,"blue":192}],"chill_idx":1,"chill_fac":100},"bdc6cf10-c223-4c9e-9b94-88495d81617a":{"uuid":"bdc6cf10-c223-4c9e-9b94-88495d81617a","length":1,"bgr":false,"colors":[{"red":20,"green":200,"blue":141},{"red":200,"green":176,"blue":20}],"chill_idx":2,"chill_fac":100},"cba45b51-fd9a-48f4-95b3-070099050887":{"uuid":"cba45b51-fd9a-48f4-95b3-070099050887","length":1,"bgr":false,"colors":[{"red":200,"green":20,"blue":30},{"red":200,"green":200,"blue":10}],"chill_idx":3,"chill_fac":100}}"""
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(data.encode('utf-8'))
+        else:
+            super().do_GET()
+
+
+if __name__ == "__main__":
+    global directory
+    directory = argv[1]
+    webServer = HTTPServer((hostName, serverPort), MyServer)
+    print("Server started http://%s:%s" % (hostName, serverPort))
+
+    try:
+        webServer.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+    webServer.server_close()
+    print("Server stopped.")
