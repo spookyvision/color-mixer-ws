@@ -1,5 +1,8 @@
 {
     "rust-analyzer.cargo.features": [
         "wasm"
-    ]
+    ],
+    "rust-analyzer.server.extraEnv": {
+        "HARLOT_BOARD": ""
+    },
 }

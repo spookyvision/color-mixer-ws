@@ -9,7 +9,7 @@ use std::{
 use chrono::{Duration, Utc};
 use color_mixer::strip::{Control, Segment, Srgb8, State, Wrap};
 use dioxus::{core::to_owned, prelude::*};
-use fermi::{use_atom_state, use_init_atom_root, use_read, use_set, Atom};
+use fermi::{use_atom_state, use_init_atom_root, use_read, use_set, Atom, AtomState};
 use futures::StreamExt;
 // use futures_channel::mpsc::{unbounded, UnboundedReceiver};
 use gloo::timers::future::TimeoutFuture;
@@ -19,7 +19,8 @@ use palette::{stimulus::IntoStimulus, Srgb};
 
 pub static STATE_ATOM: Atom<Option<SegMap>> = |_| None;
 
-const BASE_URL: Option<&'static str> = Some("http://127.0.0.1:8081/");
+const BASE_URL: Option<&'static str> = Some(env!("HARLOT_BOARD"));
+// const BASE_URL: Option<&'static str> = Some("http://127.0.0.1:8081/");
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -53,81 +54,40 @@ fn Color2(
 
 type SegMap = IndexMap<String, Segment>;
 
-#[derive(Debug, Clone)]
-struct DState(Rc<RefCell<SegMap>>);
+fn edit_segments(
+    segments: &AtomState<Option<SegMap>>,
+    update: Option<UpdateState>,
+    mut wat: impl FnMut(&mut SegMap),
+) {
+    // edit_segments(segments, update, |segments| {
+    //     if let Some(segment) = segments.get_mut(segment_id) {
+    //         segment.colors_mut()[*color_idx] = Wrap(color);
+    //     }
+    // });
+    segments.modify(|segments| {
+        let mut segments = segments.to_owned();
+        if let Some(ref mut segments) = segments {
+            wat(segments);
 
-// impl DState {
-//     fn inner_mut<'cx>(&self, cx: &'cx ScopeState) -> DStateMut<'_, 'cx> {
-//         let inner = RefCell::borrow_mut(&self.0);
-//         DStateMut { inner, cx }
-//     }
-// }
-// struct DStateMut<'i, 'cx: 'i> {
-//     inner: RefMut<'i, SegMap>,
-//     cx: &'cx ScopeState,
-// }
+            if let Some(ref update) = update {
+                update.0.send(segments.clone());
+            }
+        }
 
-// impl<'i, 'cx> Deref for DStateMut<'i, 'cx> {
-//     type Target = SegMap;
-
-//     #[inline]
-//     fn deref(&self) -> &Self::Target {
-//         &self.inner
-//     }
-// }
-
-// impl<'i, 'cx> DerefMut for DStateMut<'i, 'cx> {
-//     #[inline]
-//     fn deref_mut(&mut self) -> &mut Self::Target {
-//         &mut self.inner
-//     }
-// }
-
-// impl<'i, 'cx> Drop for DStateMut<'i, 'cx> {
-//     fn drop(&mut self) {
-//         if let Some(update) = self.cx.consume_context::<UpdateState>() {
-//             log::debug!("sending drop-da-update!");
-//             update.0.send(());
-//         }
-//     }
-// }
+        segments
+    });
+}
 
 #[allow(non_snake_case)]
 #[inline_props]
 fn ColorInput(cx: Scope, segment_id: String, color_idx: usize, val: UseState<Srgb8>) -> Element {
-    let segments = use_atom_state(&cx, STATE_ATOM);
+    let segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
 
     to_owned![val];
     let val_too = val.clone();
     let val_three = val.clone();
 
-    // if let Some(base_url) = BASE_URL {
-    //     let update: &UseFuture<Res<()>> = use_future(&cx, &val, |val| async move {
-    //         let now = Utc::now();
-    //         let debounce_amount = std::time::Duration::from_millis(400);
-    //         let dt = now
-    //             .signed_duration_since(*last_update.read())
-    //             .to_std()
-    //             .unwrap_or(debounce_amount);
-
-    //         if let Some(wait) = debounce_amount.checked_sub(dt) {
-    //             log::debug!("debounce: {wait:?}");
-    //             TimeoutFuture::new(wait.as_millis() as u32).await;
-    //         }
-
-    //         log::debug!("updating");
-    //         let url = format!("{base_url}data");
-    //         let dat = serde_json::to_vec(&*segments_too.unwrap().0.borrow())?;
-    //         let mut req = surf::post(url).body_bytes(&dat).await?;
-    //         let _loaded = req.body_bytes();
-
-    //         last_update.with_mut(|set| *set = now);
-
-    //         Ok(())
-    //     });
-    // }
-
-    let update = cx.consume_context::<UpdateState>();
+    let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
 
     cx.render(rsx! {
         input {
