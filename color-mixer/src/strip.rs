@@ -11,8 +11,8 @@ pub type Srgb8 = palette::rgb::Rgb<palette::encoding::Srgb, u8>;
 
 use derive_more::{Deref, DerefMut, From, Into};
 
-const PRIMES: &[u32] = &[
-    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+pub const CHILLED: &[u32] = &[
+    7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
 ];
 #[derive(Clone, PartialEq, From, Into, Deref, DerefMut, Debug, Serialize, Deserialize)]
 pub struct Wrap(pub Srgb8);
@@ -95,7 +95,7 @@ impl Segment {
     }
 
     pub fn chill_ms(&self) -> u32 {
-        self.chill_fac * PRIMES[self.chill_idx]
+        self.chill_fac * CHILLED[self.chill_idx]
     }
     pub fn color_at(&self, at_millis: u32) -> Srgb8 {
         let wrapped = (at_millis % self.chill_ms()) as f32;
@@ -142,6 +142,10 @@ impl Segment {
 
     pub fn colors_mut(&mut self) -> &mut [Wrap; 2] {
         &mut self.colors
+    }
+
+    pub fn set_length(&mut self, length: usize) {
+        self.length = length;
     }
 }
 

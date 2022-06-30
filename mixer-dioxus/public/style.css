@@ -7,6 +7,10 @@ body {
     color: #347;
 }
 
+h2 {
+    color: #aee
+}
+
 div.square {
     display: inline-block;
     width: 64px;
@@ -15,7 +19,14 @@ div.square {
     margin: 5px;
 }
 
-button {
+div.segment {
+    border: 1px solid #333;
+    margin: 5px;
+    padding: 15px 0;
+    background-color: #214;
+}
+
+button.blank {
     margin: 0;
     padding: 0;
     border: 0;

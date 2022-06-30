@@ -7,7 +7,7 @@ use std::{
 };
 
 use chrono::{Duration, Utc};
-use color_mixer::strip::{Control, Segment, Srgb8, State, Wrap};
+use color_mixer::strip::{Control, Segment, Srgb8, State, Wrap, CHILLED};
 use dioxus::{core::to_owned, prelude::*};
 use fermi::{use_atom_state, use_init_atom_root, use_read, use_set, Atom, AtomState};
 use futures::StreamExt;
@@ -43,35 +43,33 @@ fn Color2(
     let seg = Segment::new(100, false, **c1, **c2, *prime_idx, *fac);
     let col = seg.color_at(*now);
 
-    let dur = seg.chill_ms();
 
     cx.render(rsx!(div {
         class: "square",
         style: format_args!("background-color: #{:x}", col),
-        "{dur}ms"
+        
     }))
 }
 
 type SegMap = IndexMap<String, Segment>;
+
+fn send_update(update: Option<UpdateState>, segments: SegMap) {
+    if let Some(ref update) = update {
+        update.0.send(segments);
+    }
+}
 
 fn edit_segments(
     segments: &AtomState<Option<SegMap>>,
     update: Option<UpdateState>,
     mut wat: impl FnMut(&mut SegMap),
 ) {
-    // edit_segments(segments, update, |segments| {
-    //     if let Some(segment) = segments.get_mut(segment_id) {
-    //         segment.colors_mut()[*color_idx] = Wrap(color);
-    //     }
-    // });
     segments.modify(|segments| {
         let mut segments = segments.to_owned();
         if let Some(ref mut segments) = segments {
             wat(segments);
 
-            if let Some(ref update) = update {
-                update.0.send(segments.clone());
-            }
+            send_update(update, segments.clone());
         }
 
         segments
@@ -80,14 +78,39 @@ fn edit_segments(
 
 #[allow(non_snake_case)]
 #[inline_props]
+fn ChillInput(cx: Scope, segment_id: String, chill_idx: UseState<usize>) -> Element {
+    let segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
+    let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
+
+    let max = CHILLED.len() - 1;
+    cx.render(rsx! {
+        input {
+            r#type: "range",
+            name: "chill_idx",
+            value: "{chill_idx}",
+            min: "0",
+            max: "{max}",
+            oninput: move |ev| {
+               chill_idx.set(ev.value.clone().parse().unwrap_or(0));
+               edit_segments(segments, update.clone(), |segments| {
+                    if let Some(segment) = segments.get_mut(segment_id) {
+                        segment.set_chill_idx(**chill_idx);
+                    }
+                });
+            },
+        }
+    })
+}
+
+#[allow(non_snake_case)]
+#[inline_props]
 fn ColorInput(cx: Scope, segment_id: String, color_idx: usize, val: UseState<Srgb8>) -> Element {
     let segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
+    let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
 
     to_owned![val];
     let val_too = val.clone();
     let val_three = val.clone();
-
-    let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
 
     cx.render(rsx! {
         input {
@@ -96,22 +119,11 @@ fn ColorInput(cx: Scope, segment_id: String, color_idx: usize, val: UseState<Srg
             oninput: move |ev| {
                 let color: Srgb8 = ev.value.parse().unwrap();
                 val_three.set(color);
-                    segments.modify(|segments|
-                        {
-                            let mut segments = segments.to_owned();
-                            if let Some(ref mut segments) = segments {
-                                if let Some(segment) = segments.get_mut(segment_id) {
-                                    segment.colors_mut()[*color_idx] = Wrap(color);
-
-                                    if let Some(ref update) = update {
-                                        update.0.send(segments.clone());
-                                    }
-                                }
-                            }
-
-                            segments
-                        }
-                    );
+                edit_segments(segments, update.clone(), |segments| {
+                    if let Some(segment) = segments.get_mut(segment_id) {
+                        segment.colors_mut()[*color_idx] = Wrap(color);
+                    }
+                });
             },
         }
     })
@@ -120,13 +132,84 @@ fn ColorInput(cx: Scope, segment_id: String, color_idx: usize, val: UseState<Srg
 #[allow(non_snake_case)]
 #[inline_props]
 fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> Element {
+    let segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
+
+    let id = seg.to_uuid_string();
+    let id_too = id.clone();
+
+    let cms = segments.as_ref().map(|ss| ss.get(&id).map(|s| format!("{:.2}", s.chill_ms() as f32/1000.))).flatten();
+    // let cms = segments.as_ref().map(|ss| 1);
+    let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
+    let update_too = update.clone();
+    let update_tooer = update.clone();
+
     let c1 = use_state(&cx, || seg.color_1().to_owned());
     let c2 = use_state(&cx, || seg.color_2().to_owned());
+    let chill_idx = use_state(&cx, || seg.chill_idx());
+
+    let len = use_state(&cx, || seg.length());
+
+    // let dur_s = cms.as_ref().unwrap_or_else(|| &Some("?".to_string())).unwrap_or_else(|| "?".to_string());
+    let dur_s = cms.unwrap_or_else(||"?".to_string());
 
     cx.render(rsx!(
-        ColorInput{segment_id: seg.to_uuid_string(), color_idx: 0, val: c1.clone()}
-        ColorInput{segment_id: seg.to_uuid_string(), color_idx: 1, val: c2.clone()}
-        Color2{prime_idx: *prime_idx, fac: *fac, now: *now, c1: c1.clone(), c2: c2.clone()}
+        div {
+            class: "segment",
+            
+            h2 {"colors"}
+            Color2{prime_idx: *prime_idx, fac: *fac, now: *now, c1: c1.clone(), c2: c2.clone()}
+            ColorInput{segment_id: id.clone(), color_idx: 0, val: c1.clone()}
+            ColorInput{segment_id: id.clone(), color_idx: 1, val: c2.clone()}
+            ChillInput{segment_id: id.clone(), chill_idx:chill_idx.clone()}
+            "{dur_s}sec"
+
+            h2 {"num leds"}
+            
+            input {
+                r#type: "range",
+                name: "num_leds_r",
+                value: "{len}",
+                min: "1",
+                max: "50",
+                oninput: move |ev| {
+                    let val = ev.value.clone().parse().unwrap_or(1);
+                    len.set(val);
+                    
+                    edit_segments(segments, update_too.clone(), |segments| {
+                        if let Some(segment) = segments.get_mut(&id) {
+                            segment.set_length(val);
+                        }
+                    });
+                },
+            }
+
+            input {
+                r#type: "number",
+                name: "num_leds_n",
+                value: "{len}",
+                min: "1",
+                max: "999",
+                oninput: move |ev| {
+                    let val = ev.value.clone().parse().unwrap_or(1);
+                    len.set(val);
+
+                    edit_segments(segments, update_tooer.clone(), |segments| {
+                        if let Some(segment) = segments.get_mut(&id_too) {
+                            segment.set_length(val);
+                        }
+                    });
+                },
+            }
+
+            br {}
+
+            button {
+                onclick: move |evt| edit_segments(segments, update.clone(),  |segments| {segments.remove(&seg.to_uuid_string());}),
+                "delete"
+            }
+        }
+        
+
     ))
 }
 
@@ -135,10 +218,48 @@ struct UpdateState(CoroutineHandle<SegMap>);
 
 #[allow(non_snake_case)]
 #[inline_props]
-fn Segments(cx: Scope, fac: UseState<String>, now: u32) -> Element {
-    let fac: u32 = fac.get().parse().unwrap();
+fn Segments(cx: Scope, fac: UseState<u32>, now: u32) -> Element {
+    // let fac: u32 = fac.get().parse().unwrap();
 
     let global_segments = use_read(&cx, STATE_ATOM);
+
+    let content = match global_segments {
+        None => rsx!(div {"loading..."}),
+        Some(segments) => {
+            let inner = segments.iter().map(|(segment_id, seg)| {
+                rsx! {
+                    div {
+                        key: "seg-{segment_id}",
+                        SegmentN{seg:seg.clone(), prime_idx: seg.chill_idx(), fac: **fac, now: *now}}
+                }
+            });
+            rsx!(div { inner })
+        }
+    };
+
+    cx.render(rsx!(div { content }))
+}
+
+fn AppOutest(cx: Scope) -> Element {
+    let set_state = Rc::clone(use_set(&cx, STATE_ATOM));
+
+    if let Some(base_url) = BASE_URL {
+        cx.spawn({
+            async move {
+                let inner = async move {
+                    let url = format!("{base_url}data");
+                    let mut res = surf::get(url).await?;
+                    let body = res.body_bytes().await?;
+                    let loaded_segments: IndexMap<String, Segment> = serde_json::from_slice(&body)?;
+                    debug!("loaded {loaded_segments:?}");
+                    set_state(Some(loaded_segments));
+                    Ok(())
+                };
+                let res: Res<()> = inner.await;
+            }
+        });
+    }
+
 
     let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<SegMap>| async move {
         if let Some(base_url) = BASE_URL {
@@ -194,75 +315,45 @@ fn Segments(cx: Scope, fac: UseState<String>, now: u32) -> Element {
 
     cx.provide_context(UpdateState(update.to_owned()));
 
-    let content = match global_segments {
-        None => rsx!(div {"loading..."}),
-        Some(segments) => {
-            let inner = segments.iter().map(|(segment_id, seg)| {
-                rsx! {
-                    div {
-                        key: "seg-{segment_id}",
-                        SegmentN{seg:seg.clone(), prime_idx: seg.chill_idx(), fac: fac, now: *now}}
-                }
-            });
-            rsx!(div { inner })
-        }
-    };
-
-    cx.render(rsx!(div { content }))
-}
-
-fn AppOutest(cx: Scope) -> Element {
-    use_context_provider(&cx, || SegMap::new());
     cx.render(rsx!(AppOuter {}))
 }
+
 fn AppOuter(cx: Scope) -> Element {
-    let set_state = Rc::clone(use_set(&cx, STATE_ATOM));
+    let segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
 
-    if let Some(base_url) = BASE_URL {
-        cx.spawn({
-            async move {
-                let inner = async move {
-                    let url = format!("{base_url}data");
-                    let mut res = surf::get(url).await?;
-                    let body = res.body_bytes().await?;
-                    let loaded_segments: IndexMap<String, Segment> = serde_json::from_slice(&body)?;
-                    debug!("loaded {loaded_segments:?}");
-                    set_state(Some(loaded_segments));
-                    Ok(())
-                };
-                let res: Res<()> = inner.await;
-            }
-        });
-    }
-
-    cx.render(rsx!(App {}))
+    let content = match segments.get() {
+        Some(segments) => rsx!(App {segments: segments.clone()}),
+        None => rsx!(h2{"loading"}),
+    };
+    cx.render(content)
 }
 
-fn App(cx: Scope) -> Element {
+#[inline_props]
+fn App(cx: Scope, segments: SegMap) -> Element {
     let control = use_ref(&cx, || Control::new());
+    let global_segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
+    let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
+    let update_too = update.clone();
 
     let now = control.write().tick();
     let now = use_state(&cx, || now);
 
     let delta = use_state(&cx, || 0i32);
 
-    let initial_val = "400".to_string();
-
-    let chill_val = use_state(&cx, || initial_val.clone());
+    let initial_val = segments.iter().next().map(|(_id, seg)| seg.chill_fac()).unwrap_or(500);
+    let chill_val = use_state(&cx, || initial_val);
 
     to_owned![delta, control];
     let control_too = control.clone();
     let delta_too = delta.clone();
     let now_too = now.clone();
-    let mut old_delta = 0;
+    let old_delta = 0;
     let _english_setter: &UseFuture<Res<_>> = use_future(&cx, &control, |c| async move {
         let dat_now = c.with_mut(|c| c.tick());
         let mut new_delta = *delta;
         now_too.set(dat_now + (*delta as u32));
         Ok(())
     });
-
-    let local_now = now.clone();
 
     let _irish_setter: &UseFuture<Res<_>> = use_future(&cx, (), |_| async move {
         if let Some(base_url) = BASE_URL {
@@ -282,26 +373,49 @@ fn App(cx: Scope) -> Element {
         Ok(())
     });
 
+    // TODO range + Default newtype]
+    let default_chill_fac = 150;
+
     let content = rsx! (
      div {
          style: "text-align: center;",
+         /*
          h1 { "Bisexual lighting controller" }
          h3 { "(bisexuality optional)" }
-         p { "time: {now}"}
-         form {
-             input {
-                 r#type: "range",
-                 name: "chill_val",
-                 value: "{chill_val}",
-                 id: "chill_val",
-                 min: "10",
-                 max: "800",
-                 oninput: move |ev| chill_val.set(ev.value.clone()),
-             }
-         }
-         p { "chill: {chill_val}"}
+         */
+        h1 { "LED zeppelin" }
+        p { "time: {now}"}
+        form {
+            input {
+                r#type: "range",
+                name: "chill_val",
+                value: "{chill_val}",
+                min: "70",
+                max: "1000",
+                oninput: move |ev| {
+                let val = ev.value.clone();
+                let chill_fac = val.parse().unwrap_or(default_chill_fac);
+                chill_val.set(chill_fac);
+                edit_segments(global_segments, update.clone(), |segments| {
+                    for (_id, segment) in segments.iter_mut() {
+                        segment.set_chill_fac(chill_fac);
+                    }
+                });
 
-         Segments {fac: chill_val.clone(), now: **now}
+            },
+            }
+        }
+        p { "chill: {chill_val}"}
+
+        Segments {fac: chill_val.clone(), now: **now}
+        button {
+        onclick: move |evt| edit_segments(global_segments, update_too.clone(),  |segments| {
+            let seg = Segment::default();
+            segments.insert(seg.to_uuid_string(), seg);
+
+        }),
+        "new"
+    }
 
 
      }

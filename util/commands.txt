@@ -1,0 +1,3 @@
+watchexec -n -r -e py python web_server.py ../mixer-dioxus/dist
+..\..\dioxus-cli\target\release\dioxus.exe serve
+trunk build
