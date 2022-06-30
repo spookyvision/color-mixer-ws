@@ -25,7 +25,8 @@ impl Default for Segment {
             Srgb8::new(255, 150, 0),
             Srgb8::new(255, 10, 220),
             0,
-            40,
+            80,
+            10,
         )
     }
 }
@@ -46,6 +47,7 @@ pub struct Segment {
     colors: [Wrap; 2],
     chill_idx: usize,
     chill_fac: u32,
+    brightness: u8,
 }
 
 impl Segment {
@@ -57,6 +59,7 @@ impl Segment {
         c2: Srgb8,
         chill_idx: usize,
         chill_fac: u32,
+        brightness: u8,
     ) -> Self {
         Self {
             uuid,
@@ -65,6 +68,7 @@ impl Segment {
             colors: [Wrap(c1), Wrap(c2)],
             chill_idx,
             chill_fac,
+            brightness,
         }
     }
 
@@ -75,8 +79,18 @@ impl Segment {
         c2: Srgb8,
         chill_idx: usize,
         chill_fac: u32,
+        brightness: u8,
     ) -> Self {
-        Self::new_with_uuid(Uuid::new_v4(), length, bgr, c1, c2, chill_idx, chill_fac)
+        Self::new_with_uuid(
+            Uuid::new_v4(),
+            length,
+            bgr,
+            c1,
+            c2,
+            chill_idx,
+            chill_fac,
+            brightness,
+        )
     }
 
     pub fn mix(&self, mut t: f32) -> Srgb8 {
@@ -97,6 +111,7 @@ impl Segment {
     pub fn chill_ms(&self) -> u32 {
         self.chill_fac * CHILLED[self.chill_idx]
     }
+
     pub fn color_at(&self, at_millis: u32) -> Srgb8 {
         let wrapped = (at_millis % self.chill_ms()) as f32;
         let chill = self.chill_ms() as f32;
@@ -146,6 +161,14 @@ impl Segment {
 
     pub fn set_length(&mut self, length: usize) {
         self.length = length;
+    }
+
+    pub fn brightness(&self) -> u8 {
+        self.brightness
+    }
+
+    pub fn set_brightness(&mut self, brightness: u8) {
+        self.brightness = brightness;
     }
 }
 

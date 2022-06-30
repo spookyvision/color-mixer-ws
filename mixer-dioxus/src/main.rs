@@ -42,9 +42,8 @@ fn Color2(
     c1: UseState<Srgb8>,
     c2: UseState<Srgb8>,
 ) -> Element {
-    let seg = Segment::new(100, false, **c1, **c2, *prime_idx, *fac);
+    let seg = Segment::new(1, false, **c1, **c2, *prime_idx, *fac, 0);
     let col = seg.color_at(*now);
-
 
     cx.render(rsx!(div {
         class: "square",
@@ -226,7 +225,7 @@ fn Segments(cx: Scope, fac: UseState<u32>, now: u32) -> Element {
     let global_segments = use_read(&cx, STATE_ATOM);
 
     let content = match global_segments {
-        None => rsx!(div {"loading..."}),
+        None => return None,
         Some(segments) => {
             let inner = segments.iter().map(|(segment_id, seg)| {
                 rsx! {
@@ -336,6 +335,7 @@ fn App(cx: Scope, segments: SegMap) -> Element {
     let global_segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
     let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
     let update_too = update.clone();
+    let update_tooest = update.clone();
 
     let now = control.write().tick();
     let now = use_state(&cx, || now);
@@ -346,6 +346,8 @@ fn App(cx: Scope, segments: SegMap) -> Element {
 
     let initial_val = segments.iter().next().map(|(_id, seg)| seg.chill_fac()).unwrap_or(500);
     let chill_val = use_state(&cx, || initial_val);
+    let brightness_val = use_state(&cx, || 10u8);
+    let brightness_val_too = brightness_val.clone();
 
     to_owned![delta, control];
     let control_too = control.clone();
@@ -408,12 +410,37 @@ fn App(cx: Scope, segments: SegMap) -> Element {
             },
             }
         }
-        p { "chill: {chill_val}"}
+        h3 { "chill: {chill_val}"}
+
+        form {
+            input {
+                r#type: "range",
+                name: "brightness",
+                value: "{brightness_val}",
+                min: "1",
+                max: "128",
+                oninput: move |ev| {
+                let val = ev.value.clone();
+                let brightness = val.parse().unwrap_or(10u8);
+                brightness_val.set(brightness);
+                edit_segments(global_segments, update_tooest.clone(), |segments| {
+                    for (_id, segment) in segments.iter_mut() {
+                        segment.set_brightness(brightness);
+                    }
+                });
+
+            },
+            }
+        }
+        h3 { "brightness: {brightness_val}"}
+
 
         Segments {fac: chill_val.clone(), now: **now}
         button {
         onclick: move |evt| edit_segments(global_segments, update_too.clone(),  |segments| {
-            let seg = Segment::default();
+            let mut seg = Segment::default();
+            seg.set_chill_fac(**chill_val);
+            seg.set_brightness(*brightness_val_too);
             segments.insert(seg.to_uuid_string(), seg);
 
         }),
