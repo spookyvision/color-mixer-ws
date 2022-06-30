@@ -50,7 +50,7 @@ fn walk(root: &Path, this: &Path, out: &mut File) -> anyhow::Result<()> {
                     continue;
                 }
                 let slashed = relative.slashed();
-                let web_path = format!("/{slashed}");
+                let web_path = format!("/{slashed}").replace("index.html", ""); // yolo
 
                 let mime = MIME.get(&extension).unwrap_or(&"application/octet-stream");
                 dbg!("doing", p.path(), mime);

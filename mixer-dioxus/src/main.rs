@@ -19,6 +19,8 @@ use palette::{stimulus::IntoStimulus, Srgb};
 
 pub static STATE_ATOM: Atom<Option<SegMap>> = |_| None;
 
+const DEBOUNCE_MS: u64 = 300;
+
 const BASE_URL: Option<&'static str> = Some(env!("HARLOT_BOARD"));
 // const BASE_URL: Option<&'static str> = Some("http://127.0.0.1:8081/");
 
@@ -285,7 +287,7 @@ fn AppOutest(cx: Scope) -> Element {
                     }
 
                     let now = Utc::now();
-                    let debounce_amount = std::time::Duration::from_millis(2_000);
+                    let debounce_amount = std::time::Duration::from_millis(DEBOUNCE_MS);
 
                     let dt = now
                         .signed_duration_since(last_update)
@@ -339,13 +341,15 @@ fn App(cx: Scope, segments: SegMap) -> Element {
     let now = use_state(&cx, || now);
 
     let delta = use_state(&cx, || 0i32);
+    let delta_too = delta.clone();
+    let delta_est = delta.clone();
 
     let initial_val = segments.iter().next().map(|(_id, seg)| seg.chill_fac()).unwrap_or(500);
     let chill_val = use_state(&cx, || initial_val);
 
     to_owned![delta, control];
     let control_too = control.clone();
-    let delta_too = delta.clone();
+    let control_tooest = control.clone();
     let now_too = now.clone();
     let old_delta = 0;
     let _english_setter: &UseFuture<Res<_>> = use_future(&cx, &control, |c| async move {
@@ -362,6 +366,7 @@ fn App(cx: Scope, segments: SegMap) -> Element {
                 let mut res = surf::get(url).await?;
                 let text = res.body_string().await?;
                 let server_now: i32 = text.parse()?;
+                debug!("{server_now}");
                 let ms_since_start = control_too.with(|c| c.ms_since_start());
                 let delta_value = server_now as i32 - ms_since_start as i32;
 
@@ -376,15 +381,13 @@ fn App(cx: Scope, segments: SegMap) -> Element {
     // TODO range + Default newtype]
     let default_chill_fac = 150;
 
+    let mss = control_tooest.read().ms_since_start();
+
     let content = rsx! (
      div {
          style: "text-align: center;",
-         /*
-         h1 { "Bisexual lighting controller" }
-         h3 { "(bisexuality optional)" }
-         */
         h1 { "LED zeppelin" }
-        p { "time: {now}"}
+        p { "our time: {now}, mss: {mss}, delta: {delta_est}"}
         form {
             input {
                 r#type: "range",
