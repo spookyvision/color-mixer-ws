@@ -11,6 +11,7 @@ start = time.time()
 
 data = """{"2e2765f4-7fb7-4a8a-b61f-6dc874db15e9":{"uuid":"2e2765f4-7fb7-4a8a-b61f-6dc874db15e9","length":1,"bgr":false,"colors":[{"red":255,"green":150,"blue":0},{"red":255,"green":10,"blue":120}],"chill_idx":0,"chill_fac":100},"ae98126f-915e-470d-93a0-4b40a853a0c8":{"uuid":"ae98126f-915e-470d-93a0-4b40a853a0c8","length":1,"bgr":false,"colors":[{"red":166,"green":0,"blue":255},{"red":2,"green":192,"blue":192}],"chill_idx":1,"chill_fac":100},"bdc6cf10-c223-4c9e-9b94-88495d81617a":{"uuid":"bdc6cf10-c223-4c9e-9b94-88495d81617a","length":1,"bgr":false,"colors":[{"red":20,"green":200,"blue":141},{"red":200,"green":176,"blue":20}],"chill_idx":2,"chill_fac":100},"cba45b51-fd9a-48f4-95b3-070099050887":{"uuid":"cba45b51-fd9a-48f4-95b3-070099050887","length":1,"bgr":false,"colors":[{"red":200,"green":20,"blue":30},{"red":200,"green":200,"blue":10}],"chill_idx":3,"chill_fac":100}}""".encode(
     'utf-8')
+data = "{}".encode("utf-8")
 
 
 class MyServer(SimpleHTTPRequestHandler):

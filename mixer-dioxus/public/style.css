@@ -11,6 +11,10 @@ h2 {
     color: #aee
 }
 
+input.override {
+    opacity: 0.5;
+}
+
 div.square {
     display: inline-block;
     width: 64px;

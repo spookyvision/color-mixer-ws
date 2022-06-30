@@ -22,7 +22,17 @@ pub static STATE_ATOM: Atom<Option<SegMap>> = |_| None;
 const DEBOUNCE_MS: u64 = 300;
 
 const BASE_URL: Option<&'static str> = Some(env!("HARLOT_BOARD"));
+pub static URL_OVERRIDE_ATOM: Atom<String> = |_| "".to_string();
 // const BASE_URL: Option<&'static str> = Some("http://127.0.0.1:8081/");
+
+fn base_url(cx: Scope) -> Option<String> {
+    let url_override: &AtomState<String> = use_atom_state(&cx, URL_OVERRIDE_ATOM);
+    if !url_override.is_empty() {
+        Some(url_override.to_string())
+    } else {
+        BASE_URL.map(|s| s.to_owned())
+    }
+}
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -44,6 +54,7 @@ fn Color2(
 ) -> Element {
     let seg = Segment::new(1, false, **c1, **c2, *prime_idx, *fac, 0);
     let col = seg.color_at(*now);
+
 
     cx.render(rsx!(div {
         class: "square",
@@ -225,7 +236,8 @@ fn Segments(cx: Scope, fac: UseState<u32>, now: u32) -> Element {
     let global_segments = use_read(&cx, STATE_ATOM);
 
     let content = match global_segments {
-        None => return None,
+        None => rsx!(div {"loading..."}),
+        // None => return None,
         Some(segments) => {
             let inner = segments.iter().map(|(segment_id, seg)| {
                 rsx! {
@@ -243,27 +255,33 @@ fn Segments(cx: Scope, fac: UseState<u32>, now: u32) -> Element {
 
 fn AppOutest(cx: Scope) -> Element {
     let set_state = Rc::clone(use_set(&cx, STATE_ATOM));
-
-    if let Some(base_url) = BASE_URL {
+    if let Some(base_url) = base_url(cx) {
         cx.spawn({
             async move {
                 let inner = async move {
                     let url = format!("{base_url}data");
+
                     let mut res = surf::get(url).await?;
                     let body = res.body_bytes().await?;
+                    
                     let loaded_segments: IndexMap<String, Segment> = serde_json::from_slice(&body)?;
                     debug!("loaded {loaded_segments:?}");
                     set_state(Some(loaded_segments));
                     Ok(())
                 };
                 let res: Res<()> = inner.await;
+                if let Err(e) = res {
+                    log::error!("could not load data: {:?}", e);
+                }
             }
         });
     }
 
+    let base_url = base_url(cx.clone());
+
 
     let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<SegMap>| async move {
-        if let Some(base_url) = BASE_URL {
+        if let Some(base_url) = base_url {
             let mut last_update = Utc::now();
 
             let inner = async move {
@@ -337,6 +355,8 @@ fn App(cx: Scope, segments: SegMap) -> Element {
     let update_too = update.clone();
     let update_tooest = update.clone();
 
+    let base_url_override: &AtomState<String> = use_atom_state(&cx, URL_OVERRIDE_ATOM);
+
     let now = control.write().tick();
     let now = use_state(&cx, || now);
 
@@ -387,10 +407,24 @@ fn App(cx: Scope, segments: SegMap) -> Element {
 
     let content = rsx! (
      div {
-         style: "text-align: center;",
+        style: "text-align: center;",
         h1 { "LED zeppelin" }
         p { "our time: {now}, mss: {mss}, delta: {delta_est}"}
         form {
+            input {
+                r#type: "text",
+                class: "override",
+                name: "base_url_override",
+                placeholder: "base url override",
+                value: "{base_url_override}",
+                oninput: move |ev| {
+                let val = ev.value.clone();
+                base_url_override.set(val);
+                },
+            }
+
+            br {}
+
             input {
                 r#type: "range",
                 name: "chill_val",
@@ -409,10 +443,8 @@ fn App(cx: Scope, segments: SegMap) -> Element {
 
             },
             }
-        }
-        h3 { "chill: {chill_val}"}
+            h3 { "chill: {chill_val}"}
 
-        form {
             input {
                 r#type: "range",
                 name: "brightness",
@@ -429,7 +461,7 @@ fn App(cx: Scope, segments: SegMap) -> Element {
                     }
                 });
 
-            },
+                },
             }
         }
         h3 { "brightness: {brightness_val}"}
