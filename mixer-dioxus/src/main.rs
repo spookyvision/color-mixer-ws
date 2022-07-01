@@ -56,7 +56,7 @@ type SegMap = IndexMap<String, Segment>;
 
 fn send_update(update: Option<UpdateState>, segments: SegMap) {
     if let Some(ref update) = update {
-        update.0.send(segments);
+        update.0.send((Some(segments), None));
     }
 }
 
@@ -215,7 +215,7 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
 }
 
 #[derive(Clone)]
-struct UpdateState(CoroutineHandle<SegMap>);
+struct UpdateState(CoroutineHandle<(Option<SegMap>, Option<BaseUrl>)>);
 
 #[allow(non_snake_case)]
 #[inline_props]
@@ -244,6 +244,8 @@ fn AppOutestestest(cx: Scope) -> Element {
     let base_url: &AtomState<String> = use_atom_state(&cx, BASE_URL_ATOM);
     let base_url_tooest = base_url.clone();
 
+    let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
+
     // let set_base_url = Rc::clone(use_set(&cx, BASE_URL_ATOM));
 
     cx.render(rsx! {
@@ -257,6 +259,10 @@ fn AppOutestestest(cx: Scope) -> Element {
                 oninput: move |ev| {
                     let val = ev.value.clone();
                     debug!("set {val}");
+                    if let Some(ref update) = update {
+                        debug!("da new {val}");
+                        update.0.send((None, Some(val.clone())));
+                    }
                     base_url_tooest.modify(|_| val);
                 },
             }
@@ -298,60 +304,71 @@ fn AppOutestest(cx: Scope, base_url: String) -> Element {
     })
 }
 
+type BaseUrl = String;
+
 #[inline_props]
 fn AppOutest(cx: Scope, base_url: String) -> Element {
     // let base_url: AtomState<String> = use_atom_state(&cx, BASE_URL_ATOM).to_owned();
-    let base_url_too = use_atom_state(&cx, BASE_URL_ATOM);
     
+
+    let mut base_url = base_url.to_owned();
     
-    let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<SegMap>| 
+    let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<(Option<SegMap>, Option<BaseUrl>)>| 
         {
-            to_owned![base_url, base_url_too];
             log::debug!("T_T {base_url}");
             async move {
                 let mut last_update = Utc::now();
         
                 let inner = async move {
-                    while let Some(mut data) = rx.next().await {
+                    while let Some((mut reduced_data, mut reduced_base_url)) = rx.next().await {
+                        log::debug!("Ti_Tty {base_url}");
                         loop {
                             match rx.try_next() {
                                 Ok(None) => {
                                     log::info!("shutting down updater");
                                 }
-                                Ok(Some(next_data)) => {
+                                Ok(Some((next_data, next_base_url))) => {
                                     log::debug!("but wait, there's more!");
-                                    data = next_data;
+                                    if next_data.is_some() {
+                                        reduced_data = next_data;
+                                    }
+                                    
+                                    if next_base_url.is_some() {
+                                        reduced_base_url = next_base_url;
+                                    }
                                     continue;
                                 }
-                                Err(data) => {
+                                Err(err) => {
                                     log::debug!("I can't believe it's not bu^Wmore!");
                                     break;
                                 } // channel has been drained
                             }
                         }
+
+                        base_url = reduced_base_url.unwrap_or(base_url);
         
-                        let now = Utc::now();
-                        let debounce_amount = std::time::Duration::from_millis(DEBOUNCE_MS);
-        
-                        let dt = now
-                            .signed_duration_since(last_update)
-                            .to_std()
-                            .unwrap_or(debounce_amount);
-        
-                        if let Some(wait) = debounce_amount.checked_sub(dt) {
-                            log::debug!("debounce: {wait:?}");
-                            TimeoutFuture::new(wait.as_millis() as u32).await;
+                        if let Some(data) = reduced_data {
+                            let now = Utc::now();
+                            let debounce_amount = std::time::Duration::from_millis(DEBOUNCE_MS);
+            
+                            let dt = now
+                                .signed_duration_since(last_update)
+                                .to_std()
+                                .unwrap_or(debounce_amount);
+            
+                            if let Some(wait) = debounce_amount.checked_sub(dt) {
+                                log::debug!("debounce: {wait:?}");
+                                TimeoutFuture::new(wait.as_millis() as u32).await;
+                            }
+            
+                            log::debug!("updating! {base_url}");
+                            let ser = serde_json::to_vec(&data)?;
+                            let mut req = surf::post(&base_url).body_bytes(&ser).await?;
+                            let _loaded = req.body_bytes().await;
+            
+                            last_update = Utc::now();
                         }
-        
-                        let url = base_url_too.current();
-                        let url = format!("{base_url}data");
-        
-                        log::debug!("updating! {url}");
-                        let ser = serde_json::to_vec(&data)?;
-                        let mut req = surf::post(url).body_bytes(&ser).await?;
-                        let _loaded = req.body_bytes().await;
-        
-                        last_update = Utc::now();
+                        
                     }
                     Ok(())
                 };
