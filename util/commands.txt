@@ -1,3 +1,6 @@
 watchexec -n -r -e py python web_server.py ../mixer-dioxus/dist
+
+$Env:HARLOT_BOARD = "http://127.0.0.1:8081/"  
 ..\..\dioxus-cli\target\release\dioxus.exe serve
+
 trunk build

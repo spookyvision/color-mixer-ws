@@ -21,25 +21,14 @@ pub static STATE_ATOM: Atom<Option<SegMap>> = |_| None;
 
 const DEBOUNCE_MS: u64 = 300;
 
-const BASE_URL: Option<&'static str> = Some(env!("HARLOT_BOARD"));
-pub static URL_OVERRIDE_ATOM: Atom<String> = |_| "".to_string();
-// const BASE_URL: Option<&'static str> = Some("http://127.0.0.1:8081/");
-
-fn base_url(cx: Scope) -> Option<String> {
-    let url_override: &AtomState<String> = use_atom_state(&cx, URL_OVERRIDE_ATOM);
-    if !url_override.is_empty() {
-        Some(url_override.to_string())
-    } else {
-        BASE_URL.map(|s| s.to_owned())
-    }
-}
+pub static BASE_URL_ATOM: Atom<String> = |_| env!("HARLOT_BOARD").to_string();
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
 fn main() {
     wasm_logger::init(wasm_logger::Config::default());
     console_error_panic_hook::set_once();
-    dioxus::web::launch(AppOutest);
+    dioxus::web::launch(AppOutestestest);
 }
 
 #[allow(non_snake_case)]
@@ -231,8 +220,6 @@ struct UpdateState(CoroutineHandle<SegMap>);
 #[allow(non_snake_case)]
 #[inline_props]
 fn Segments(cx: Scope, fac: UseState<u32>, now: u32) -> Element {
-    // let fac: u32 = fac.get().parse().unwrap();
-
     let global_segments = use_read(&cx, STATE_ATOM);
 
     let content = match global_segments {
@@ -253,84 +240,127 @@ fn Segments(cx: Scope, fac: UseState<u32>, now: u32) -> Element {
     cx.render(rsx!(div { content }))
 }
 
-fn AppOutest(cx: Scope) -> Element {
-    let set_state = Rc::clone(use_set(&cx, STATE_ATOM));
-    if let Some(base_url) = base_url(cx) {
-        cx.spawn({
-            async move {
-                let inner = async move {
-                    let url = format!("{base_url}data");
+fn AppOutestestest(cx: Scope) -> Element { 
+    let base_url: &AtomState<String> = use_atom_state(&cx, BASE_URL_ATOM);
+    let base_url_tooest = base_url.clone();
 
-                    let mut res = surf::get(url).await?;
-                    let body = res.body_bytes().await?;
-                    
-                    let loaded_segments: IndexMap<String, Segment> = serde_json::from_slice(&body)?;
-                    debug!("loaded {loaded_segments:?}");
-                    set_state(Some(loaded_segments));
-                    Ok(())
-                };
-                let res: Res<()> = inner.await;
-                if let Err(e) = res {
-                    log::error!("could not load data: {:?}", e);
-                }
+    // let set_base_url = Rc::clone(use_set(&cx, BASE_URL_ATOM));
+
+    cx.render(rsx! {
+        form {
+            input {
+                r#type: "text",
+                class: "override",
+                name: "base_url_override",
+                placeholder: "base url override",
+                value: "{base_url}",
+                oninput: move |ev| {
+                    let val = ev.value.clone();
+                    debug!("set {val}");
+                    base_url_tooest.modify(|_| val);
+                },
             }
-        });
-    }
+        }
+        AppOutestest {base_url: base_url.get().clone()}
+    })
+    
+}
 
-    let base_url = base_url(cx.clone());
+#[inline_props]
+fn AppOutestest(cx: Scope, base_url: String) -> Element {
+    log::debug!("i_i");
+    let segments_state = use_atom_state(&cx, STATE_ATOM).to_owned();
+    
+    let bu = base_url.clone();
+    let _doberman: &UseFuture<()> = use_future(&cx,base_url, |base_url| async move {
+        let url = base_url.clone();
+        let inner = async move {
+            debug!("load from {url}");
+            let url = format!("{url}data");
 
-
-    let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<SegMap>| async move {
-        if let Some(base_url) = base_url {
-            let mut last_update = Utc::now();
-
-            let inner = async move {
-                while let Some(mut data) = rx.next().await {
-                    loop {
-                        match rx.try_next() {
-                            Ok(None) => {
-                                log::info!("shutting down updater");
-                            }
-                            Ok(Some(next_data)) => {
-                                log::debug!("but wait, there's more!");
-                                data = next_data;
-                                continue;
-                            }
-                            Err(data) => {
-                                log::debug!("I can't believe it's not bu^Wmore!");
-                                break;
-                            } // channel has been drained
-                        }
-                    }
-
-                    let now = Utc::now();
-                    let debounce_amount = std::time::Duration::from_millis(DEBOUNCE_MS);
-
-                    let dt = now
-                        .signed_duration_since(last_update)
-                        .to_std()
-                        .unwrap_or(debounce_amount);
-
-                    if let Some(wait) = debounce_amount.checked_sub(dt) {
-                        log::debug!("debounce: {wait:?}");
-                        TimeoutFuture::new(wait.as_millis() as u32).await;
-                    }
-                    log::debug!("updating!");
-
-                    let url = format!("{base_url}data");
-
-                    let ser = serde_json::to_vec(&data)?;
-                    let mut req = surf::post(url).body_bytes(&ser).await?;
-                    let _loaded = req.body_bytes().await;
-
-                    last_update = Utc::now();
-                }
-                Ok(())
-            };
-
-            let res: Res<()> = inner.await;
+            let mut res = surf::get(url).await?;
+            let body = res.body_bytes().await?;
+            
+            let loaded_segments: IndexMap<String, Segment> = serde_json::from_slice(&body)?;
+            debug!("loaded {loaded_segments:?}");
+            segments_state.set(Some(loaded_segments));
+            Ok(())
+        };
+        let res: Res<()> = inner.await;
+        if let Err(e) = res {
+            log::error!("could not load data: {:?}", e);
         }
     });
+
+    
+    cx.render(rsx! {
+        AppOutest {base_url: bu}
+    })
+}
+
+#[inline_props]
+fn AppOutest(cx: Scope, base_url: String) -> Element {
+    // let base_url: AtomState<String> = use_atom_state(&cx, BASE_URL_ATOM).to_owned();
+    let base_url_too = use_atom_state(&cx, BASE_URL_ATOM);
+    
+    
+    let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<SegMap>| 
+        {
+            to_owned![base_url, base_url_too];
+            log::debug!("T_T {base_url}");
+            async move {
+                let mut last_update = Utc::now();
+        
+                let inner = async move {
+                    while let Some(mut data) = rx.next().await {
+                        loop {
+                            match rx.try_next() {
+                                Ok(None) => {
+                                    log::info!("shutting down updater");
+                                }
+                                Ok(Some(next_data)) => {
+                                    log::debug!("but wait, there's more!");
+                                    data = next_data;
+                                    continue;
+                                }
+                                Err(data) => {
+                                    log::debug!("I can't believe it's not bu^Wmore!");
+                                    break;
+                                } // channel has been drained
+                            }
+                        }
+        
+                        let now = Utc::now();
+                        let debounce_amount = std::time::Duration::from_millis(DEBOUNCE_MS);
+        
+                        let dt = now
+                            .signed_duration_since(last_update)
+                            .to_std()
+                            .unwrap_or(debounce_amount);
+        
+                        if let Some(wait) = debounce_amount.checked_sub(dt) {
+                            log::debug!("debounce: {wait:?}");
+                            TimeoutFuture::new(wait.as_millis() as u32).await;
+                        }
+        
+                        let url = base_url_too.current();
+                        let url = format!("{base_url}data");
+        
+                        log::debug!("updating! {url}");
+                        let ser = serde_json::to_vec(&data)?;
+                        let mut req = surf::post(url).body_bytes(&ser).await?;
+                        let _loaded = req.body_bytes().await;
+        
+                        last_update = Utc::now();
+                    }
+                    Ok(())
+                };
+        
+                let res: Res<()> = inner.await;
+            }
+        }
+        
+        );
 
     cx.provide_context(UpdateState(update.to_owned()));
 
@@ -344,18 +374,19 @@ fn AppOuter(cx: Scope) -> Element {
         Some(segments) => rsx!(App {segments: segments.clone()}),
         None => rsx!(h2{"loading"}),
     };
+
     cx.render(content)
 }
 
 #[inline_props]
 fn App(cx: Scope, segments: SegMap) -> Element {
+    let base_url: AtomState<String> = use_atom_state(&cx, BASE_URL_ATOM).to_owned();
     let control = use_ref(&cx, || Control::new());
     let global_segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
     let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
     let update_too = update.clone();
     let update_tooest = update.clone();
 
-    let base_url_override: &AtomState<String> = use_atom_state(&cx, URL_OVERRIDE_ATOM);
 
     let now = control.write().tick();
     let now = use_state(&cx, || now);
@@ -381,22 +412,23 @@ fn App(cx: Scope, segments: SegMap) -> Element {
         Ok(())
     });
 
-    let _irish_setter: &UseFuture<Res<_>> = use_future(&cx, (), |_| async move {
-        if let Some(base_url) = BASE_URL {
-            loop {
-                let url = format!("{base_url}now");
-                let mut res = surf::get(url).await?;
-                let text = res.body_string().await?;
-                let server_now: i32 = text.parse()?;
-                debug!("{server_now}");
-                let ms_since_start = control_too.with(|c| c.ms_since_start());
-                let delta_value = server_now as i32 - ms_since_start as i32;
+    let _irish_setter: &UseFuture<Res<_>> = use_future(&cx, &base_url, |base_url| async move {
+        
+        loop {
+            let url = base_url.current();
+            let url = format!("{url}now");
+            let mut res = surf::get(url).await?;
+            let text = res.body_string().await?;
+            let server_now: i32 = text.parse()?;
+            debug!("{server_now}");
+            let ms_since_start = control_too.with(|c| c.ms_since_start());
+            let delta_value = server_now as i32 - ms_since_start as i32;
 
-                delta_too.with_mut(|set| *set = delta_value);
+            delta_too.with_mut(|set| *set = delta_value);
 
-                TimeoutFuture::new(2_000).await;
-            }
+            TimeoutFuture::new(2_000).await;
         }
+    
         Ok(())
     });
 
@@ -412,24 +444,10 @@ fn App(cx: Scope, segments: SegMap) -> Element {
         p { "our time: {now}, mss: {mss}, delta: {delta_est}"}
         form {
             input {
-                r#type: "text",
-                class: "override",
-                name: "base_url_override",
-                placeholder: "base url override",
-                value: "{base_url_override}",
-                oninput: move |ev| {
-                let val = ev.value.clone();
-                base_url_override.set(val);
-                },
-            }
-
-            br {}
-
-            input {
                 r#type: "range",
                 name: "chill_val",
                 value: "{chill_val}",
-                min: "70",
+                min: "40",
                 max: "1000",
                 oninput: move |ev| {
                 let val = ev.value.clone();
