@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import cgi
 from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
 from sys import argv
