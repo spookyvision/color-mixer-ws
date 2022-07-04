@@ -171,7 +171,7 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
                 name: "num_leds_r",
                 value: "{len}",
                 min: "1",
-                max: "50",
+                max: "60",
                 oninput: move |ev| {
                     let val = ev.value.clone().parse().unwrap_or(1);
                     len.set(val);

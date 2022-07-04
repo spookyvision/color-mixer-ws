@@ -3,6 +3,6 @@
         "wasm"
     ],
     "rust-analyzer.server.extraEnv": {
-        "HARLOT_BOARD": ""
+        "HARLOT_BOARD": "http://harharlot/"
     },
 }
