@@ -20,7 +20,7 @@ fn main() {
 }
 
 #[allow(non_snake_case)]
-fn App2(cx: Scope) -> Element { 
+fn App2(cx: Scope) -> Element {
     let base_url = use_state(&cx, || env!("HARLOT_BOARD").to_string());
 
     cx.render(rsx! {
@@ -44,77 +44,70 @@ fn App2(cx: Scope) -> Element {
 #[allow(non_snake_case)]
 #[inline_props]
 fn AppServerSync(cx: Scope, base_url: UseState<String>) -> Element {
-    let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<SegMap>| 
-        {
-            to_owned![base_url];
-            async move {
-                let mut last_update = Utc::now();
-        
-                let inner = async move {
-                    while let Some(mut data) = rx.next().await {
-                        loop {
-                            match rx.try_next() {
-                                Ok(None) => {
-                                    log::info!("shutting down updater");
-                                }
-                                Ok(Some(next_data)) => {
-                                    log::debug!("but wait, there's more!");
-                                    data = next_data;
-                                    continue;
-                                }
-                                Err(_e) => {
-                                    // channel has been drained
-                                    log::debug!("I can't believe it's not bu^Wmore!");
-                                    break;
-                                } 
+    let update = use_coroutine(&cx, |mut rx: UnboundedReceiver<SegMap>| {
+        to_owned![base_url];
+        async move {
+            let mut last_update = Utc::now();
+
+            let inner = async move {
+                while let Some(mut data) = rx.next().await {
+                    loop {
+                        match rx.try_next() {
+                            Ok(None) => {
+                                log::info!("shutting down updater");
+                            }
+                            Ok(Some(next_data)) => {
+                                log::debug!("but wait, there's more!");
+                                data = next_data;
+                                continue;
+                            }
+                            Err(_e) => {
+                                // channel has been drained
+                                log::debug!("I can't believe it's not bu^Wmore!");
+                                break;
                             }
                         }
-        
-                        let now = Utc::now();
-                        let debounce_amount = std::time::Duration::from_millis(DEBOUNCE_MS);
-        
-                        let dt = now
-                            .signed_duration_since(last_update)
-                            .to_std()
-                            .unwrap_or(debounce_amount);
-        
-                        if let Some(wait) = debounce_amount.checked_sub(dt) {
-                            log::debug!("debounce: {wait:?}");
-                            TimeoutFuture::new(wait.as_millis() as u32).await;
-                        }
-        
-                        let latest_base_url = base_url.current();
-                        let url = format!("{latest_base_url}data");
-                        log::debug!("updating DATA at {url}");
-        
-                        let ser = serde_json::to_vec(&data)?;
-                        let mut req = surf::post(url).body_bytes(&ser).await?;
-                        let _loaded = req.body_bytes().await?;
-                        
-                        last_update = Utc::now();
-
-
                     }
-                    Ok(())
-                };
-        
-                let res: Res<()> = inner.await;
-                if let Err(e) = res {
-                    log::error!("someone went wrong: {e:?}");
+
+                    let now = Utc::now();
+                    let debounce_amount = std::time::Duration::from_millis(DEBOUNCE_MS);
+
+                    let dt = now
+                        .signed_duration_since(last_update)
+                        .to_std()
+                        .unwrap_or(debounce_amount);
+
+                    if let Some(wait) = debounce_amount.checked_sub(dt) {
+                        log::debug!("debounce: {wait:?}");
+                        TimeoutFuture::new(wait.as_millis() as u32).await;
+                    }
+
+                    let latest_base_url = base_url.current();
+                    let url = format!("{latest_base_url}data");
+                    log::debug!("updating DATA at {url}");
+
+                    let ser = serde_json::to_vec(&data)?;
+                    let mut req = surf::post(url).body_bytes(&ser).await?;
+                    let _loaded = req.body_bytes().await?;
+
+                    last_update = Utc::now();
                 }
+                Ok(())
+            };
+
+            let res: Res<()> = inner.await;
+            if let Err(e) = res {
+                log::error!("someone went wrong: {e:?}");
             }
         }
-        
-        );
-
+    });
 
     cx.provide_context(UpdateState(update.to_owned()));
 
-    cx.render(rsx!(
-        AppOutestest {base_url: base_url.to_string()}
-    ))
+    cx.render(rsx!(AppOutestest {
+        base_url: base_url.to_string()
+    }))
 }
-
 
 #[allow(non_snake_case)]
 #[inline_props]
@@ -129,11 +122,9 @@ fn Color2(
     let seg = Segment::new(1, false, **c1, **c2, *prime_idx, *fac, 0);
     let col = seg.color_at(*now);
 
-
     cx.render(rsx!(div {
         class: "square",
         style: format_args!("background-color: #{:x}", col),
-        
     }))
 }
 
@@ -223,7 +214,13 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
     let id = seg.to_uuid_string();
     let id_too = id.clone();
 
-    let cms = segments.as_ref().map(|ss| ss.get(&id).map(|s| format!("{:.2}", s.chill_ms() as f32/1000.))).flatten();
+    let cms = segments
+        .as_ref()
+        .map(|ss| {
+            ss.get(&id)
+                .map(|s| format!("{:.2}", s.chill_ms() as f32 / 1000.))
+        })
+        .flatten();
     // let cms = segments.as_ref().map(|ss| 1);
     let update: Option<UpdateState> = cx.consume_context::<UpdateState>();
     let update_too = update.clone();
@@ -236,12 +233,11 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
     let len = use_state(&cx, || seg.length());
 
     // let dur_s = cms.as_ref().unwrap_or_else(|| &Some("?".to_string())).unwrap_or_else(|| "?".to_string());
-    let dur_s = cms.unwrap_or_else(||"?".to_string());
+    let dur_s = cms.unwrap_or_else(|| "?".to_string());
 
     cx.render(rsx!(
         div {
             class: "segment",
-            
             h2 {"colors"}
             Color2{prime_idx: *prime_idx, fac: *fac, now: *now, c1: c1.clone(), c2: c2.clone()}
             ColorInput{segment_id: id.clone(), color_idx: 0, val: c1.clone()}
@@ -250,7 +246,6 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
             "{dur_s}sec"
 
             h2 {"num leds"}
-            
             input {
                 r#type: "range",
                 name: "num_leds_r",
@@ -260,7 +255,6 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
                 oninput: move |ev| {
                     let val = ev.value.clone().parse().unwrap_or(1);
                     len.set(val);
-                    
                     edit_segments(segments, update_too.clone(), |segments| {
                         if let Some(segment) = segments.get_mut(&id) {
                             segment.set_length(val);
@@ -294,8 +288,6 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
                 "delete"
             }
         }
-        
-
     ))
 }
 
@@ -329,8 +321,8 @@ fn Segments(cx: Scope, fac: UseState<u32>, now: u32) -> Element {
 #[inline_props]
 fn AppOutestest(cx: Scope, base_url: String) -> Element {
     let segments_state = use_atom_state(&cx, STATE_ATOM).to_owned();
-    
-    let _doberman: &UseFuture<()> = use_future(&cx,base_url, |base_url| async move {
+
+    let _doberman: &UseFuture<()> = use_future(&cx, base_url, |base_url| async move {
         to_owned![base_url];
         let url = base_url;
         let inner = async move {
@@ -339,7 +331,7 @@ fn AppOutestest(cx: Scope, base_url: String) -> Element {
 
             let mut res = surf::get(url).await?;
             let body = res.body_bytes().await?;
-            
+
             let loaded_segments: IndexMap<String, Segment> = serde_json::from_slice(&body)?;
             debug!("loaded {loaded_segments:?}");
             segments_state.set(Some(loaded_segments));
@@ -351,11 +343,13 @@ fn AppOutestest(cx: Scope, base_url: String) -> Element {
         }
     });
 
-    
     let segments: &AtomState<Option<SegMap>> = use_atom_state(&cx, STATE_ATOM);
 
     let content = match segments.get() {
-        Some(segments) => rsx!(App {base_url:base_url.clone(), segments: segments.clone()}),
+        Some(segments) => rsx!(App {
+            base_url: base_url.clone(),
+            segments: segments.clone()
+        }),
         None => rsx!(h2{"loading"}),
     };
 
@@ -371,15 +365,18 @@ fn App(cx: Scope, base_url: String, segments: SegMap) -> Element {
     let update_too = update.clone();
     let update_tooest = update.clone();
 
-
     let now = control.write().tick();
     let now = use_state(&cx, || now);
 
-    let delta = use_state(&cx, || 0i32);
+    let delta = use_state(&cx, || 0i64);
     let delta_too = delta.clone();
     let delta_est = delta.clone();
 
-    let initial_val = segments.iter().next().map(|(_id, seg)| seg.chill_fac()).unwrap_or(500);
+    let initial_val = segments
+        .iter()
+        .next()
+        .map(|(_id, seg)| seg.chill_fac())
+        .unwrap_or(500);
     let chill_val = use_state(&cx, || initial_val);
     let brightness_val = use_state(&cx, || 10u8);
     let brightness_val_too = brightness_val.clone();
@@ -397,16 +394,18 @@ fn App(cx: Scope, base_url: String, segments: SegMap) -> Element {
     });
 
     let _irish_setter: &UseFuture<Res<()>> = use_future(&cx, base_url, |base_url| async move {
-        
         loop {
             let url = format!("{base_url}now");
             debug!("load NOW from {url}");
+            let req_start = Utc::now();
             let mut res = surf::get(url).await?;
+            let req_duration = Utc::now().signed_duration_since(req_start);
+            debug!("rd {req_duration}");
             let text = res.body_string().await?;
-            let server_now: i32 = text.parse()?;
+            let server_now = text.parse::<i64>()? + req_duration.num_milliseconds() / 2;
             debug!("{server_now}");
             let ms_since_start = control_too.with(|c| c.ms_since_start());
-            let delta_value = server_now as i32 - ms_since_start as i32;
+            let delta_value = server_now - ms_since_start as i64;
 
             delta_too.with_mut(|set| *set = delta_value);
 
@@ -469,18 +468,16 @@ fn App(cx: Scope, base_url: String, segments: SegMap) -> Element {
 
         Segments {fac: chill_val.clone(), now: **now}
         button {
-        onclick: move |_evt| edit_segments(global_segments, update_too.clone(),  |segments| {
-            let mut seg = Segment::default();
-            seg.set_chill_fac(**chill_val);
-            seg.set_brightness(*brightness_val_too);
-            segments.insert(seg.to_uuid_string(), seg);
+            onclick: move |_evt| edit_segments(global_segments, update_too.clone(),  |segments| {
+                let mut seg = Segment::default();
+                seg.set_chill_fac(**chill_val);
+                seg.set_brightness(*brightness_val_too);
+                segments.insert(seg.to_uuid_string(), seg);
 
-        }),
-        "new"
+            }),
+            "new"
+        }
     }
-
-
-     }
     );
     cx.render(content)
 }
