@@ -400,9 +400,10 @@ fn App(cx: Scope, base_url: String, segments: SegMap) -> Element {
             let req_start = Utc::now();
             let mut res = surf::get(url).await?;
             let req_duration = Utc::now().signed_duration_since(req_start);
-            debug!("rd {req_duration}");
             let text = res.body_string().await?;
-            let server_now = text.parse::<i64>()? + req_duration.num_milliseconds() / 2;
+            let latency_estimate = req_duration.num_milliseconds() / 2;
+            debug!("rd {latency_estimate}");
+            let server_now = text.parse::<i64>()? + latency_estimate;
             debug!("{server_now}");
             let ms_since_start = control_too.with(|c| c.ms_since_start());
             let delta_value = server_now - ms_since_start as i64;
