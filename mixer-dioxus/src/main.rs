@@ -19,6 +19,8 @@ fn main() {
     dioxus::web::launch(App2);
 }
 
+mod canvas;
+
 #[allow(non_snake_case)]
 fn App2(cx: Scope) -> Element {
     let base_url = use_state(&cx, || env!("HARLOT_BOARD").to_string());
@@ -122,9 +124,18 @@ fn Color2(
     let seg = Segment::new(1, false, **c1, **c2, *prime_idx, *fac, 0);
     let col = seg.color_at(*now);
 
+    let pc: piet::Color = piet::Color::rgb8(col.red, col.green, col.blue);
+
+    let size = 20f64;
+    let xy = size + 3.;
     cx.render(rsx!(div {
         class: "square",
-        style: format_args!("background-color: #{:x}", col),
+        style: format_args!("border: 2px dotted #{:x}", col),
+
+        canvas::web::Canvas{
+            color: pc.clone(),
+            canvas::web::Circle{x: xy, y: xy, radius:size, color: pc.clone()}
+        }
     }))
 }
 
@@ -238,7 +249,7 @@ fn SegmentN(cx: Scope, seg: Segment, prime_idx: usize, fac: u32, now: u32) -> El
     cx.render(rsx!(
         div {
             class: "segment",
-            h2 {"colors"}
+            h2 {"c0lors"}
             Color2{prime_idx: *prime_idx, fac: *fac, now: *now, c1: c1.clone(), c2: c2.clone()}
             ColorInput{segment_id: id.clone(), color_idx: 0, val: c1.clone()}
             ColorInput{segment_id: id.clone(), color_idx: 1, val: c2.clone()}
